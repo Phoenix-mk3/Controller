@@ -1,23 +1,21 @@
-#include <Wire.h>
-#include <WiFi.h>
-#include <PubSubClient.h>
+#include <Wire.h> // i2c kommunikasjon
+#include <WiFi.h> // wifi tilkobling med esp32
+#include <PubSubClient.h> //for MQTT kommunikasjon
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME680.h>
 
 const char* ssid = "your_SSID"; // Brukernavn og passord på nettverket
 const char* password = "your_PASSWORD";
-
 // MQTT Broker settings
-const char* mqtt_server = "your_MQTT_broker_address"; // Dette blir IP adressen på Rasberry Pi'en
-const int mqtt_port = 1883;
+const char* mqtt_server = "your_MQTT_broker_address"; // Dette blir IP adressen på Rasberry Pi'en/HUB'en.
+const int mqtt_port = 1883; // MQTT er standard gjennom port 1883
 const char* mqtt_user = "your_MQTT_username";  // Optional
 const char* mqtt_password = "your_MQTT_password";  // Optional
 
-// BME688 sensor setup
-Adafruit_BME680 bme;
+Adafruit_BME680 bme; // Sensorobjekt for BME688
 
-WiFiClient espClient;
-PubSubClient client(espClient);
+WiFiClient espClient;  // WiFi-objekt for å håndtere ESP32s WiFi-tilkobling
+PubSubClient client(espClient); // PubSubClient-objekt for MQTT-kommunikasjon, bruker WiFi-tilkoblingen
 
 long lastMsg = 0;
 char msg[100];
@@ -40,21 +38,19 @@ void setup_wifi() {
   Serial.println("");
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+  Serial.println(WiFi.localIP()); // Skriver ut IP-adressen til ESP32 på nettverket
 }
 
-// Callback function for MQTT
-void callback(char* topic, byte* payload, unsigned int length) {
+void callback(char* topic, byte* payload, unsigned int length) { // Callback funksjon for innkommende meldinger fra MQTT servern. 
   Serial.print("Message arrived [");
-  Serial.print(topic);
+  Serial.print(topic); // Skriver ut topic og meldingen hvor payload er meldingen.
   Serial.print("] ");
   for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
+    Serial.print((char)payload[i]); // innholdet i meldingen er bytes. så den blir konvertert til tekst
   }
   Serial.println();
 }
 
-// Reconnect to MQTT Broker if connection is lost
 void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
@@ -96,7 +92,7 @@ void loop() {
   }
   client.loop();
 
-  // Publish sensor data every 2 seconds
+  // publiserer data hvert 2 sek
   long now = millis();
   if (now - lastMsg > 2000) {
     lastMsg = now;
@@ -120,7 +116,7 @@ void loop() {
     // Convert String to char array
     payload.toCharArray(msg, 100);
 
-    // Publish data to the MQTT topic
+    // Publish data to the MQTT topic. Denne som går inn i MQTT in noden. 
     Serial.print("Publishing message: ");
     Serial.println(msg);
     client.publish("sensors/bme688", msg);
