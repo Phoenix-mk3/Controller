@@ -152,7 +152,8 @@ void loop() {
 }
 
 long convertTimeToMillis(String time) {
-  // Her kan du implementere funksjonen for å konvertere alarmtidspunkt til millisekunder.
-  // Eksempel: konverter "07:30" til millisekunder siden midnatt.
-  return 0;  // Tilpass denne til ditt behov
+  // Forventet format: "HH:MM" (f.eks. "07:30")
+  int hours = time.substring(0, 2).toInt();
+  int minutes = time.substring(3, 5).toInt();
+  return (hours * 3600000L) + (minutes * 60000L);  // Konverterer timer og minutter til millisekunder
 }
