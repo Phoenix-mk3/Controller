@@ -16,6 +16,8 @@ Adafruit_BME680 bme; // Sensorobjekt for BME688
 
 WiFiClient espClient;  // WiFi-objekt for å håndtere ESP32s WiFi-tilkobling
 PubSubClient client(espClient); // PubSubClient-objekt for MQTT-kommunikasjon, bruker WiFi-tilkoblingen
+const int LIGHT_PIN = 13; // Endre etter hvilken pinne lyslenken er koblet til
+String alarmTime = "";  // Lagre alarmtidspunkt lokalt
 
 long lastMsg = 0;
 char msg[100];
@@ -49,15 +51,31 @@ void callback(char* topic, byte* payload, unsigned int length) { // Callback fun
     Serial.print((char)payload[i]); // innholdet i meldingen er bytes. så den blir konvertert til tekst
   }
   Serial.println();
+  // Konverter payload til en streng for videre prosessering
+  String message;
+  for (int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+  // Hvis melding fra topic "esp32/alarmtime", lagre alarmtidspunktet
+  if (String(topic) == "esp32/alarmtime") {
+    alarmTime = message;
+    Serial.println("Alarm set for: " + alarmTime);
+  }
+  // Hvis melding fra topic "esp32/alarmoff", slå av alarmen (lyslenken)
+  if (String(topic) == "esp32/alarmoff") {
+    digitalWrite(LIGHT_PIN, LOW);
+    Serial.println("Alarm turned off.");
+  }
 }
-
 void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     if (client.connect("ESP32Client", mqtt_user, mqtt_password)) {
       Serial.println("connected");
-      client.publish("status/esp32", "ESP32 connected");
+      client.publish("status/esp32", "ESP32 connected"); // Abonner på nødvendige topics på nytt
       client.subscribe("esp32/commands");
+      client.subscribe("esp32/alarmtime");
+      client.subscribe("esp32/alarmoff");
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -72,6 +90,8 @@ void setup() {
   setup_wifi();
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
+  client.subscribe("esp32/alarmtime");
+  client.subscribe("esp32/alarmoff");
 
   if (!bme.begin()) {
     Serial.println("Could not find a valid BME688 sensor, check wiring!");
@@ -84,13 +104,16 @@ void setup() {
   bme.setPressureOversampling(BME680_OS_4X);
   bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
   bme.setGasHeater(320, 150); // 320*C for 150 ms
+
+
+  
 }
 
 void loop() {
-  if (!client.connected()) {
+  if (!client.connected()) { // Reconnect MQTT hvis den ikke er tilkoblet
     reconnect();
   }
-  client.loop();
+  client.loop(); // Hold MQTT-tilkoblingen aktiv
 
   // publiserer data hvert 2 sek
   long now = millis();
@@ -102,18 +125,18 @@ void loop() {
       return;
     }
 
-    // Construct the message payload
+     // Konstruer meldingen med sensor-data i JSON-format
     String payload = "{\"temperature\": ";
     payload += String(bme.temperature);
     payload += ", \"humidity\": ";
     payload += String(bme.humidity);
     payload += ", \"pressure\": ";
-    payload += String(bme.pressure / 100.0);  // Convert from Pascals to hPa
+    payload += String(bme.pressure / 100.0);  // Konverter fra Pascal til hPa
     payload += ", \"gas_resistance\": ";
-    payload += String(bme.gas_resistance / 1000.0);  // Convert to kOhms
+    payload += String(bme.gas_resistance / 1000.0);  // Konverter til kOhm
     payload += "}";
 
-    // Convert String to char array
+      // Konverter String til char-array
     payload.toCharArray(msg, 100);
 
     // Publish data to the MQTT topic. Denne som går inn i MQTT in noden. 
@@ -121,4 +144,15 @@ void loop() {
     Serial.println(msg);
     client.publish("sensors/bme688", msg);
   }
+  // Overvåk alarmtidspunktet og skru på lyslenken når alarmen skal gå av
+  if (millis() >= convertTimeToMillis(alarmTime)) {
+    digitalWrite(LIGHT_PIN, HIGH);  // Skru på lyslenken (alarm)
+    Serial.println("Alarm triggered!");
+  }
+}
+
+long convertTimeToMillis(String time) {
+  // Her kan du implementere funksjonen for å konvertere alarmtidspunkt til millisekunder.
+  // Eksempel: konverter "07:30" til millisekunder siden midnatt.
+  return 0;  // Tilpass denne til ditt behov
 }
