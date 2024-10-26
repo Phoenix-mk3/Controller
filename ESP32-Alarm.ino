@@ -47,15 +47,14 @@ void callback(char* topic, byte* payload, unsigned int length) { // Callback fun
   Serial.print("Message arrived [");
   Serial.print(topic); // Skriver ut topic og meldingen hvor payload er meldingen.
   Serial.print("] ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]); // innholdet i meldingen er bytes. så den blir konvertert til tekst
-  }
-  Serial.println();
-  // Konverter payload til en streng for videre prosessering
+  // Omgjør payload til en String og skriver den ut
   String message;
   for (int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
+    char c = (char)payload[i];
+    Serial.print(c);
+    message += c;   
+    }
+  Serial.println();
   // Hvis melding fra topic "esp32/alarmtime", lagre alarmtidspunktet
   if (String(topic) == "esp32/alarmtime") {
     alarmTime = message;
@@ -87,7 +86,6 @@ void reconnect() {
 
 void setup() {
   Serial.begin(115200);
-  setup_wifi();
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
   client.subscribe("esp32/alarmtime");
@@ -104,8 +102,6 @@ void setup() {
   bme.setPressureOversampling(BME680_OS_4X);
   bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
   bme.setGasHeater(320, 150); // 320*C for 150 ms
-
-
   
 }
 
@@ -114,7 +110,6 @@ void loop() {
     reconnect();
   }
   client.loop(); // Hold MQTT-tilkoblingen aktiv
-
   // publiserer data hvert 2 sek
   long now = millis();
   if (now - lastMsg > 2000) {
