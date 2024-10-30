@@ -3,6 +3,7 @@
 #include <PubSubClient.h> //for MQTT kommunikasjon
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME680.h>
+#include <time.h> // Bibliotek for RTC (Real time clock)
 
 const char* ssid = "your_SSID"; // Brukernavn og passord på nettverket
 const char* password = "your_PASSWORD";
@@ -12,6 +13,10 @@ const int mqtt_port = 1883; // MQTT er standard gjennom port 1883
 const char* mqtt_user = "your_MQTT_username";  // Optional
 const char* mqtt_password = "your_MQTT_password";  // Optional
 
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 3600;  // Juster for riktig tidssone
+const int daylightOffset_sec = 3600;
+
 Adafruit_BME680 bme; // Sensorobjekt for BME688
 
 WiFiClient espClient;  // WiFi-objekt for å håndtere ESP32s WiFi-tilkobling
@@ -19,9 +24,8 @@ PubSubClient client(espClient); // PubSubClient-objekt for MQTT-kommunikasjon, b
 const int LIGHT_PIN = 13; // Endre etter hvilken pinne lyslenken er koblet til
 String alarmTime = "";  // Lagre alarmtidspunkt lokalt
 
-long lastMsg = 0;
+long lastPublishTime = 0;
 char msg[100];
-int value = 0;
 
 // Function to connect to WiFi
 void setup_wifi() {
@@ -36,32 +40,25 @@ void setup_wifi() {
     delay(500);
     Serial.print(".");
   }
-
   Serial.println("");
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP()); // Skriver ut IP-adressen til ESP32 på nettverket
 }
 
-void callback(char* topic, byte* payload, unsigned int length) { // Callback funksjon for innkommende meldinger fra MQTT servern. 
+void callback(char* topic, byte* payload, unsigned int length) { // Forbedret callbacken og gjort den lettere å forstå
   Serial.print("Message arrived [");
-  Serial.print(topic); // Skriver ut topic og meldingen hvor payload er meldingen.
+  Serial.print(topic); 
   Serial.print("] ");
-  // Omgjør payload til en String og skriver den ut
-  String message;
-  for (int i = 0; i < length; i++) {
-    char c = (char)payload[i];
-    Serial.print(c);
-    message += c;   
-    }
-  Serial.println();
-  // Hvis melding fra topic "esp32/alarmtime", lagre alarmtidspunktet
+
+  // Forenklet metode for å konvertere payload til String
+  String message((char*)payload, length);
+  Serial.println(message);
+
   if (String(topic) == "esp32/alarmtime") {
     alarmTime = message;
     Serial.println("Alarm set for: " + alarmTime);
-  }
-  // Hvis melding fra topic "esp32/alarmoff", slå av alarmen (lyslenken)
-  if (String(topic) == "esp32/alarmoff") {
+  } else if (String(topic) == "esp32/alarmoff") {
     digitalWrite(LIGHT_PIN, LOW);
     Serial.println("Alarm turned off.");
   }
@@ -86,12 +83,13 @@ void reconnect() {
 
 void setup() {
   Serial.begin(115200);
+  setup_wifi();
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
-  client.subscribe("esp32/alarmtime");
-  client.subscribe("esp32/alarmoff");
+  pinMode(LIGHT_PIN, OUTPUT);
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);// Configure time with NTP
 
-  if (!bme.begin()) {
+  if (!bme.begin()) { // Initialiserer BME sensor
     Serial.println("Could not find a valid BME688 sensor, check wiring!");
     while (1);
   }
@@ -112,8 +110,8 @@ void loop() {
   client.loop(); // Hold MQTT-tilkoblingen aktiv
   // publiserer data hvert 2 sek
   long now = millis();
-  if (now - lastMsg > 2000) {
-    lastMsg = now;
+  if (now - lastPublishTime > 2000) {
+    lastPublishTime = now;
 
     if (!bme.performReading()) {
       Serial.println("Failed to perform reading from BME688 sensor");
@@ -139,16 +137,19 @@ void loop() {
     Serial.println(msg);
     client.publish("sensors/bme688", msg);
   }
-  // Overvåk alarmtidspunktet og skru på lyslenken når alarmen skal gå av
-  if (millis() >= convertTimeToMillis(alarmTime)) {
-    digitalWrite(LIGHT_PIN, HIGH);  // Skru på lyslenken (alarm)
-    Serial.println("Alarm triggered!");
-  }
+   // Get the current time from the built-in RTC
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    // Check if the current time matches the alarm time
+    if (!alarmTime.isEmpty()) {
+      int alarmHour = alarmTime.substring(0, 2).toInt();
+      int alarmMinute = alarmTime.substring(3, 5).toInt();
+
+      if (timeinfo.tm_hour == alarmHour && timeinfo.tm_min == alarmMinute) {
+        digitalWrite(LIGHT_PIN, HIGH);  // Skru på lyslenken (alarm)
+        Serial.println("Alarm triggered!");
+      }
+    }
+  } 
 }
 
-long convertTimeToMillis(String time) {
-  // Forventet format: "HH:MM" (f.eks. "07:30")
-  int hours = time.substring(0, 2).toInt();
-  int minutes = time.substring(3, 5).toInt();
-  return (hours * 3600000L) + (minutes * 60000L);  // Konverterer timer og minutter til millisekunder
-}
